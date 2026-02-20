@@ -10,7 +10,6 @@ langchain
 langchain-core
 langchain-nvidia-ai-endpoints
 langchain-huggingface
-langchain-chroma
 
 # Twitter bot
 tweepy
@@ -19,5 +18,6 @@ tweepy
 openai
 
 # Vector DB + embeddings
-chromadb
+faiss-cpu
+numpy
 sentence-transformers

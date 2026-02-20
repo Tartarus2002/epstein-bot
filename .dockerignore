@@ -6,8 +6,13 @@ env/
 # Raw data files (built at runtime on volume)
 data/
 
-# ChromaDB (too large for upload, built on first boot via ingestion pipeline)
+# FAISS index (pre-built locally, uploaded to Railway volume)
+faiss_index/
 chroma_db/
+
+# Local-only scripts
+deploy/
+ingest/
 
 # Git
 .git/

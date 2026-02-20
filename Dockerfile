@@ -3,7 +3,7 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# System deps for building wheels (chromadb, torch, etc.)
+# System deps for building wheels (faiss-cpu, sentence-transformers, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gcc g++ && \
     rm -rf /var/lib/apt/lists/*
@@ -22,7 +22,7 @@ ENV PYTHONUNBUFFERED=1
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
-# Copy application code (no ingest/ needed — ChromaDB is pre-built on volume)
+# Copy application code (no ingest/ needed — FAISS index is pre-built on volume)
 COPY app.py .
 COPY x_bot.py .
 COPY vision_utils.py .
@@ -30,7 +30,7 @@ COPY security.py .
 COPY start.py .
 COPY api/ ./api/
 
-# ChromaDB is pre-built locally and uploaded to Railway Volume at /app/chroma_db.
+# FAISS index is pre-built locally and uploaded to Railway Volume at /app/faiss_index.
 # The bot reads directly from the volume — no ingestion happens at deploy time.
 
 CMD ["python", "start.py"]

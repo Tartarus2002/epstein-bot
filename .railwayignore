@@ -3,6 +3,9 @@ venv/
 .venv/
 data/
 chroma_db/
+faiss_index/
+deploy/
+ingest/
 .git/
 __pycache__/
 *.pyc

@@ -49,11 +49,12 @@ chroma_db/*.sqlite3
 *.pyo
 *.pyd
 
-# Data folder
+# Data folder (raw docs, chunks, embedding cache)
 data/
 
-#chroma DB
+# Vector stores (pre-built locally, uploaded to Railway volume)
 chroma_db/
+faiss_index/
 
 # Bot runtime state
 last_seen_id.txt

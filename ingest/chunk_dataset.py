@@ -1,47 +1,102 @@
+"""
+Chunk the cleaned documents for embedding.
+Uses 2000-char chunks (better context per chunk, manageable DB size).
+Processes docs in memory (64GB RAM handles it fine).
+"""
+
 import json
 import hashlib
+import time
+import os
+import sys
+import gc
+
+sys.stdout.reconfigure(line_buffering=True)
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-print("Loading cleaned documents...")
-with open("data/cleaned.json", "r", encoding="utf-8") as f:
-    docs = json.load(f)
+CHUNK_SIZE = 2000
+CHUNK_OVERLAP = 200
+INPUT = "data/cleaned.json"
+OUTPUT = "data/chunks.json"
 
-print(f"Documents loaded: {len(docs):,}")
+print(f"Chunk config: size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP}", flush=True)
 
 splitter = RecursiveCharacterTextSplitter(
-    chunk_size=400,
-    chunk_overlap=80
+    chunk_size=CHUNK_SIZE,
+    chunk_overlap=CHUNK_OVERLAP
 )
 
+
 def h(t):
-    return hashlib.sha256(t.lower().encode()).hexdigest()
+    """Return truncated hash (16 bytes) to save memory."""
+    return hashlib.sha256(t.lower().encode()).digest()[:16]
 
+
+# Load all docs into memory (64GB RAM can handle 3.2GB JSON easily)
+print("Loading documents...", flush=True)
+with open(INPUT, "r", encoding="utf-8") as f:
+    docs = json.load(f)
+total_docs = len(docs)
+print(f"Loaded {total_docs:,} documents", flush=True)
+
+# Process in batches and write incrementally
 seen = set()
-chunks = []
+chunk_count = 0
+start = time.time()
+WRITE_BATCH = 200000  # write to disk every N chunks to limit memory
 
-for idx, d in enumerate(docs):
-    parts = splitter.split_text(d["text"])
-    for i, p in enumerate(parts):
-        key = h(p)
-        if key in seen:
-            continue
-        seen.add(key)
-        chunks.append({
-            "text": p,
-            "metadata": {
-                "source": d["file"],
-                "chunk": i
-            }
-        })
+with open(OUTPUT, "w", encoding="utf-8") as out:
+    out.write("[")
+    first = True
+    buffer = []
 
-    if (idx + 1) % 100000 == 0:
-        print(f"  Processed {idx + 1:,} / {len(docs):,} docs | {len(chunks):,} chunks so far")
+    for idx in range(total_docs):
+        d = docs[idx]
+        text = d["text"]
+        filename = d["file"]
 
-print(f"\nChunking complete: {len(chunks):,} unique chunks from {len(docs):,} documents")
-print(f"Dedup removed: {sum(len(splitter.split_text(d['text'])) for d in docs[:0]) if False else 'N/A (counted during processing)'}")
+        parts = splitter.split_text(text)
+        for i, p in enumerate(parts):
+            key = h(p)
+            if key in seen:
+                continue
+            seen.add(key)
 
-print("Writing chunks.json...")
-with open("data/chunks.json", "w", encoding="utf-8") as f:
-    json.dump(chunks, f)
+            chunk_json = json.dumps({
+                "text": p,
+                "metadata": {"source": filename, "chunk": i}
+            })
 
-print(f"Chunks: {len(chunks):,}")
+            if not first:
+                buffer.append(",\n" + chunk_json)
+            else:
+                buffer.append("\n" + chunk_json)
+                first = False
+            chunk_count += 1
+
+        # Flush buffer to disk periodically
+        if len(buffer) >= WRITE_BATCH:
+            out.write("".join(buffer))
+            buffer.clear()
+
+        if (idx + 1) % 100000 == 0:
+            elapsed = time.time() - start
+            rate = (idx + 1) / elapsed
+            eta = (total_docs - idx - 1) / rate
+            print(f"  {idx + 1:,} / {total_docs:,} docs "
+                  f"| {chunk_count:,} chunks "
+                  f"| {rate:.0f} docs/s "
+                  f"| ETA: {eta:.0f}s", flush=True)
+
+    # Flush remaining
+    if buffer:
+        out.write("".join(buffer))
+    out.write("\n]")
+
+elapsed = time.time() - start
+print(f"\nChunking complete in {elapsed:.0f}s", flush=True)
+print(f"  {chunk_count:,} unique chunks from {total_docs:,} documents", flush=True)
+
+size_gb = os.path.getsize(OUTPUT) / (1024**3)
+print(f"  Output: {OUTPUT} ({size_gb:.2f} GB)", flush=True)

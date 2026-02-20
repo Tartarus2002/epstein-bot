@@ -1,11 +1,13 @@
 import os
 import time
+import pickle
 import tweepy
+import numpy as np
+import faiss
 from dotenv import load_dotenv
 
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 
 from vision_utils import extract_text_from_image
@@ -37,22 +39,23 @@ auth_v1 = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_sec
 api_v1 = tweepy.API(auth_v1, wait_on_rate_limit=True)
 
 # =============================================================
-# RAG Stack — matches existing repo architecture exactly
+# RAG Stack — FAISS index (pre-built locally, loaded from volume)
 # =============================================================
+FAISS_DIR = os.getenv("FAISS_DIR", "./faiss_index")
+
 embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-db = Chroma(
-    collection_name="epstein",
-    persist_directory="./chroma_db",
-    embedding_function=embeddings,
-)
+print(f"[RAG] Loading FAISS index from {FAISS_DIR}...")
+faiss_index = faiss.read_index(os.path.join(FAISS_DIR, "index.faiss"))
 
-retriever = db.as_retriever(
-    search_type="mmr",
-    search_kwargs={"k": 12, "fetch_k": 60},
-)
+with open(os.path.join(FAISS_DIR, "metadata.pkl"), "rb") as f:  # noqa: S301 — trusted self-generated data
+    all_metadata = pickle.load(f)
+with open(os.path.join(FAISS_DIR, "texts.pkl"), "rb") as f:  # noqa: S301
+    all_texts = pickle.load(f)
+
+print(f"[RAG] FAISS ready: {faiss_index.ntotal:,} vectors | {len(all_texts):,} texts")
 
 # =============================================================
 # LLM — NVIDIA NIM (replaces Groq)
@@ -134,19 +137,34 @@ def get_parent_tweet(parent_id: str) -> dict:
 
 def search_rag(query: str) -> str:
     """
-    Run the combined query against ChromaDB + NVIDIA NIM LLM.
+    Run the combined query against FAISS + NVIDIA NIM LLM.
+    Fetches 60 candidates, deduplicates by source file, keeps top 12.
     Returns file name(s) or 'not found in files'.
     """
-    docs = retriever.invoke(query)
+    # Embed query and normalize for cosine similarity (index uses IndexFlatIP)
+    query_emb = embeddings.embed_query(query)
+    query_vec = np.array([query_emb], dtype=np.float32)
+    faiss.normalize_L2(query_vec)
 
-    if not docs:
-        return "not found in files"
+    # Fetch 60 candidates from FAISS
+    scores, indices = faiss_index.search(query_vec, 60)
 
-    # Build context with source metadata visible to the LLM
+    # Deduplicate by source file — keep only the best chunk per document
+    seen_sources = set()
     context_parts = []
-    for d in docs:
-        source = d.metadata.get("source", "unknown")
-        context_parts.append(f"[Source: {source}]\n{d.page_content}")
+    for idx in indices[0]:
+        if idx < 0:
+            continue
+        source = all_metadata[idx].get("source", "unknown")
+        if source in seen_sources:
+            continue
+        seen_sources.add(source)
+        context_parts.append(f"[Source: {source}]\n{all_texts[idx]}")
+        if len(context_parts) >= 12:
+            break
+
+    if not context_parts:
+        return "not found in files"
 
     context = "\n\n".join(context_parts)
 
@@ -340,7 +358,7 @@ def run_bot(poll_interval: int = 60) -> None:
 # =============================================================
 if __name__ == "__main__":
     print("Loading RAG components...")
-    print(f"ChromaDB collection: epstein | Dir: ./chroma_db")
+    print(f"FAISS index: {FAISS_DIR}")
     print(f"LLM: meta/llama-3.1-70b-instruct via NVIDIA NIM")
     print(f"Vision: meta/llama-3.2-11b-vision-instruct via NVIDIA NIM")
     print(f"Security: anti-injection sanitization | output validation | rate limiting (5/hr/user)")

@@ -1,5 +1,5 @@
 """
-Railway entrypoint — ChromaDB is pre-built locally and uploaded to the volume.
+Railway entrypoint — FAISS index is pre-built locally and uploaded to the volume.
 This script just verifies it exists and launches the bot.
 """
 
@@ -7,17 +7,18 @@ import os
 import sys
 from pathlib import Path
 
-CHROMA_DIR = Path("chroma_db")
-CHROMA_MARKER = CHROMA_DIR / "chroma.sqlite3"
+FAISS_DIR = Path(os.getenv("FAISS_DIR", "faiss_index"))
+FAISS_MARKER = FAISS_DIR / "index.faiss"
 
 
 def main() -> None:
-    if CHROMA_MARKER.exists():
-        print("[Start] ChromaDB found on volume.")
+    if FAISS_MARKER.exists():
+        size_gb = FAISS_MARKER.stat().st_size / (1024**3)
+        print(f"[Start] FAISS index found ({size_gb:.2f} GB).")
     else:
-        print("[FATAL] ChromaDB NOT found on volume at /app/chroma_db")
-        print("[FATAL] You must upload the pre-built ChromaDB to the Railway volume.")
-        print("[FATAL] Run `python ingest/run_local.py` locally, then upload chroma_db/")
+        print(f"[FATAL] FAISS index NOT found at {FAISS_DIR}/index.faiss")
+        print("[FATAL] You must upload the pre-built FAISS index to the Railway volume.")
+        print("[FATAL] Run `python ingest/embed_runner.py` locally, then upload faiss_index/")
         sys.exit(1)
 
     # Launch the bot
