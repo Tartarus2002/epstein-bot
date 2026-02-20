@@ -1,7 +1,8 @@
+import os
 from fastapi import FastAPI
 from dotenv import load_dotenv
 
-from langchain_groq import ChatGroq
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
@@ -39,10 +40,11 @@ retriever = db.as_retriever(
 # -----------------------------
 # LLM
 # -----------------------------
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+llm = ChatNVIDIA(
+    model="meta/llama-3.1-70b-instruct",
+    api_key=os.getenv("NVIDIA_API_KEY"),
     temperature=0,
-    max_tokens=500
+    max_tokens=500,
 )
 
 # -----------------------------
@@ -71,10 +73,11 @@ def ask(question: str):
     docs = retriever.invoke(question)
 
     print("Retrieved docs:", len(docs))
-    print(docs[0].page_content[:500])
 
     if not docs:
         return {"answer": "I could not find this information in the documents."}
+
+    print(docs[0].page_content[:500])
 
     context = "\n\n".join(d.page_content for d in docs)
 

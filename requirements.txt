@@ -12,10 +12,16 @@ requests
 # LangChain (modern)
 langchain
 langchain-core
-langchain-groq
+langchain-nvidia-ai-endpoints
 langchain-huggingface
 langchain-chroma
 langchain-text-splitters
+
+# Twitter bot
+tweepy
+
+# NVIDIA NIM Vision
+openai
 
 # Vector DB + embeddings
 chromadb

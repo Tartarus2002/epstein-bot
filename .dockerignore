@@ -1,0 +1,37 @@
+# Virtual environment (rebuilt in container)
+venv/
+.venv/
+env/
+
+# Raw data files (built at runtime on volume)
+data/
+
+# ChromaDB (too large for upload, built on first boot via ingestion pipeline)
+chroma_db/
+
+# Git
+.git/
+.gitignore
+
+# IDE / OS
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+Thumbs.db
+
+# Environment (secrets go via Railway env vars, not file)
+.env
+.env.example
+
+# Bot state (fresh start on deploy)
+last_seen_id.txt
+
+# Docs
+README.md
+LICENSE
+
+# Windows reserved device name (not a real file, causes upload errors)
+nul

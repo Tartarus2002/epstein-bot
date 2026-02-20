@@ -1,0 +1,13 @@
+nul
+venv/
+.venv/
+data/
+chroma_db/
+.git/
+__pycache__/
+*.pyc
+.env
+.env.example
+last_seen_id.txt
+README.md
+LICENSE

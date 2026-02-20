@@ -55,4 +55,8 @@ data/
 #chroma DB
 chroma_db/
 
+# Bot runtime state
+last_seen_id.txt
 
+# Windows reserved device names
+nul

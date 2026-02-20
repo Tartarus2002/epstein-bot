@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import requests
 
@@ -106,7 +107,7 @@ st.markdown(
 # -----------------------------
 # API
 # -----------------------------
-API_URL = "http://127.0.0.1:8000/ask"
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/ask")
 
 # -----------------------------
 # Session state (single-shot)
