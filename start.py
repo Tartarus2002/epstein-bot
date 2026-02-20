@@ -7,6 +7,7 @@ import os
 import sys
 import shutil
 import subprocess
+import time
 import urllib.request
 from pathlib import Path
 
@@ -34,11 +35,24 @@ def download_faiss() -> None:
     else:
         FAISS_DIR.mkdir(parents=True)
 
-    # Download archive
-    print("[Download] Downloading archive (this may take several minutes)...")
-    urllib.request.urlretrieve(FAISS_URL, str(archive))
-    size_gb = archive.stat().st_size / (1024**3)
-    print(f"[Download] Downloaded: {size_gb:.2f} GB")
+    # Download archive with retry
+    max_retries = 5
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"[Download] Downloading archive (attempt {attempt}/{max_retries})...")
+            urllib.request.urlretrieve(FAISS_URL, str(archive))
+            size_gb = archive.stat().st_size / (1024**3)
+            print(f"[Download] Downloaded: {size_gb:.2f} GB")
+            break
+        except Exception as e:
+            print(f"[Download] Attempt {attempt} failed: {e}")
+            if attempt < max_retries:
+                wait = 30 * attempt
+                print(f"[Download] Retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                print("[FATAL] All download attempts failed.")
+                sys.exit(1)
 
     # Extract — tar expects faiss_index/ directory inside the archive,
     # but we want files directly in FAISS_DIR (which might be /app/chroma_db)
