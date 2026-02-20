@@ -22,17 +22,15 @@ ENV PYTHONUNBUFFERED=1
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
-# Copy application code
+# Copy application code (no ingest/ needed — ChromaDB is pre-built on volume)
 COPY app.py .
 COPY x_bot.py .
 COPY vision_utils.py .
 COPY security.py .
 COPY start.py .
 COPY api/ ./api/
-COPY ingest/ ./ingest/
 
-# chroma_db is NOT included in the image (1.3GB, exceeds upload limit).
-# It gets built on first boot via start.py -> ingest pipeline,
-# then persisted on a Railway Volume mounted at /app/chroma_db.
+# ChromaDB is pre-built locally and uploaded to Railway Volume at /app/chroma_db.
+# The bot reads directly from the volume — no ingestion happens at deploy time.
 
 CMD ["python", "start.py"]
