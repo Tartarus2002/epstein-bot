@@ -16,6 +16,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Force Python to flush stdout/stderr immediately (critical for Railway log visibility)
+ENV PYTHONUNBUFFERED=1
+
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
