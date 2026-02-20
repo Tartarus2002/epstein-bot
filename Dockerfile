@@ -16,6 +16,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# zstd needed for FAISS index extraction on first deploy
+RUN apt-get update && apt-get install -y --no-install-recommends zstd && rm -rf /var/lib/apt/lists/*
+
 # Force Python to flush stdout/stderr immediately (critical for Railway log visibility)
 ENV PYTHONUNBUFFERED=1
 
