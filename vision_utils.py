@@ -23,7 +23,7 @@ def extract_text_from_image(image_url: str) -> str:
         )
 
         response = client.chat.completions.create(
-            model="meta/llama-3.2-11b-vision-instruct",
+            model="nvidia/nemotron-nano-12b-v2-vl",
             messages=[
                 {
                     "role": "user",

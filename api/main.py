@@ -41,7 +41,7 @@ retriever = db.as_retriever(
 # LLM
 # -----------------------------
 llm = ChatNVIDIA(
-    model="meta/llama-3.1-70b-instruct",
+    model="deepseek-ai/deepseek-v3.2",
     api_key=os.getenv("NVIDIA_API_KEY"),
     temperature=0,
     max_tokens=500,
