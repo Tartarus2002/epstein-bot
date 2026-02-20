@@ -7,11 +7,20 @@ from langchain_huggingface import HuggingFaceEmbeddings
 CHROMA_DIR = "chroma_db"
 
 # --------------------------------------------------
-# Reset Chroma DB
+# Reset Chroma DB (clear contents, keep directory for volume mounts)
 # --------------------------------------------------
-if Path(CHROMA_DIR).exists():
-    print("Removing existing Chroma DB...")
-    shutil.rmtree(CHROMA_DIR)
+chroma_path = Path(CHROMA_DIR)
+if chroma_path.exists():
+    print("Clearing existing Chroma DB contents...")
+    for item in chroma_path.iterdir():
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+    print("Chroma DB directory cleared.")
+else:
+    chroma_path.mkdir(parents=True, exist_ok=True)
+    print("Created fresh chroma_db directory.")
 
 # --------------------------------------------------
 # Load chunks
