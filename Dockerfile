@@ -28,6 +28,9 @@ COPY --from=builder /install /usr/local
 # Copy application code (no ingest/ needed — FAISS index is pre-built on volume)
 COPY app.py .
 COPY x_bot.py .
+COPY bot_main.py .
+COPY instagram_bot.py .
+COPY instagram_webhook.py .
 COPY vision_utils.py .
 COPY security.py .
 COPY start.py .

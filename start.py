@@ -86,9 +86,9 @@ def main() -> None:
         print("[FATAL] Set FAISS_URL env var to auto-download, or upload manually.")
         sys.exit(1)
 
-    # Launch the bot
-    print("[Start] Launching x_bot.py...")
-    os.execv(sys.executable, [sys.executable, "x_bot.py"])
+    # Launch the bot orchestrator (Twitter polling + Instagram webhook)
+    print("[Start] Launching bot_main.py...")
+    os.execv(sys.executable, [sys.executable, "bot_main.py"])
 
 
 if __name__ == "__main__":
