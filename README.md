@@ -1,206 +1,127 @@
-# EpsteinFiles-RAG
-A RAG pipeline implementation built on the 'Epstein Files 20K' dataset from Hugging Face (Teyler).
+# epstein-bot
 
-![Recording 2026-02-10 230408](https://github.com/user-attachments/assets/e7378680-b113-442e-b112-7745197ade65)
+A bot that searches the public Epstein files (a full-text corpus of 1.38 million documents) and replies to a claim with the names of the source files to read.
 
-## Dataset source
-👉 https://huggingface.co/datasets/teyler/epstein-files-20k
+Built on [EpsteinFiles-RAG](https://github.com/AnkitNayak-dev/EpsteinFiles-RAG) by Ankit Nayak (MIT license). That project is a RAG pipeline over the [Epstein Files 20K](https://huggingface.co/datasets/teyler/epstein-files-20k) dataset on Hugging Face (House Oversight estate documents), with ChromaDB, a FastAPI endpoint and a Streamlit UI. The first seven commits in this repo (Feb 10-14, 2026) are the original author's. The ten commits after them are mine.
 
-## Precomputed Embeddings
-👉 https://huggingface.co/datasets/devankit7873/EpsteinFiles-Vector-Embeddings-ChromaDB
+## What I added
 
+- **Full corpus:** replaced the 20K dataset with a public full-text corpus of 1.38M documents, covering all 12 DOJ datasets plus House Oversight and FBI Vault material. DOJ documents keep their EFTA numbers as file names (`EFTA########.pdf`), and the bot replies with those names.
+- **FAISS instead of ChromaDB:** about 2.47M chunk vectors in one flat FAISS index. ChromaDB's HNSW index kept getting corrupted when the embedding job crashed and restarted.
+- **Resumable embedding:** the GPU job saves its work every 100K chunks and picks up from the last saved batch. A small wrapper restarts it after a crash.
+- **Self-provisioning index:** on first boot, `start.py` downloads the prebuilt index from `FAISS_URL` (up to 5 attempts, with a longer wait after each failure) and extracts it.
+- **Models:** moved the LLM from Groq to NVIDIA NIM, then upgraded to `deepseek-ai/deepseek-v3.2` for choosing the relevant files and `nvidia/nemotron-nano-12b-v2-vl` for OCR on images in posts.
+- **X bot:** when someone tags the bot in a reply under a post, it reads that post, including text in attached images, and replies with the names of the most relevant files.
+- **Instagram comments (experimental):** the same pipeline can also answer Instagram comments that tag the bot's account, through a Meta webhook. It only starts when `IG_ACCESS_TOKEN` is set.
+- **Guardrails:** redacts common prompt-injection phrases in post text and OCR output, posts only lines that look like file names, and limits each user to 5 requests an hour.
+- **Railway deployment:** Dockerfile and `railway.toml`, the index on a mounted volume, a fix for a crash when clearing that volume (`rmtree` on a mount point fails with `EBUSY`), and unbuffered output so logs show up.
 
----
+## How it works
 
-## ⚡ Quick Demo
+### Building the index (once, on a local machine)
 
-Process 2M+ document lines → Get accurate, grounded answers in seconds
+1. `ingest/download_corpus.py` downloads the full-text SQLite corpus and decompresses it.
+2. `ingest/extract_from_sqlite.py` joins the pages of each document (grouped by EFTA number) into one record and skips documents with under 100 characters of text. About 1.3M remain.
+3. `ingest/chunk_dataset.py` splits each document into chunks of up to 2,000 characters with 200 characters of overlap and drops duplicate chunks.
+4. `ingest/embed_chunks.py` embeds the chunks with `sentence-transformers/all-MiniLM-L6-v2` and writes a FAISS `IndexFlatIP` over normalized vectors (cosine similarity) to `faiss_index/`, with `metadata.pkl` and `texts.pkl` beside it.
+5. `deploy/compress_faiss.sh` packs `faiss_index/` into `faiss_index.tar.zst` so it can be hosted for `FAISS_URL`.
 
-**What it does:**
-- Automatically cleans and reconstructs fragmented documents
-- Intelligently chunks documents while preserving context
-- Embeds everything into a searchable vector database
-- Retrieves diverse, relevant information using MMR algorithm
-- Generates answers grounded solely in the retrieved context
+### Answering a post
 
----
-
-## 🎯 Key Features
-
-✅ **No Hallucinations** - Answers only from source documents  
-✅ **Intelligent Retrieval** - MMR algorithm for diverse results  
-✅ **Fast Processing** - ~1 second end-to-end query response  
-✅ **Semantic Understanding** - Context-aware document chunking  
-✅ **REST API** - Easy integration with other systems  
-✅ **Interactive UI** - Streamlit web interface included  
-✅ **Scalable** - Handles 100K+ document chunks  
-✅ **Production-Ready** - Async support, error handling, logging  
-
----
-
-## 🏗️ How It Works
-
-### Three Simple Stages
-
-**Stage 1: Data Preparation**
-```
-Raw Documents (2.5M lines)
-    ↓
-Clean & Reconstruct
-    ↓
-Smart Chunking
-    ↓
-Vector Embeddings
+```text
+X: mention in a reply under a post        Instagram: comment that tags the bot
+               |                                        |
+     parent post text + photos              comment + post caption + photos
+               +-------------------+--------------------+
+                                   |
+              OCR on the post's images (Nemotron Nano VL)
+                                   |
+         redact injection phrases, cap the query at 1,500 chars
+                                   |
+       embed, FAISS top 60, best chunk per file, keep 12 files
+                                   |
+              DeepSeek V3.2 picks the relevant file names
+                                   |
+      drop lines that do not look like file names, post the reply
 ```
 
-**Stage 2: Intelligent Retrieval**
-```
-User Question
-    ↓
-Find Similar Context (MMR)
-    ↓
-Return Top Chunks
-```
+On X the bot checks mentions every 180 seconds by default and skips mentions that are not replies. A reply starts with "Related documents found in the Epstein files:" and lists as many file names as fit in 280 characters (2,200 on Instagram). With no match, the X reply is "Not found in files."
 
-**Stage 3: Grounded Answer**
-```
-Context + Question
-    ↓
-LLaMA 3.3 LLM
-    ↓
-Grounded Answer (with sources)
-```
+Code map: `start.py` (entry point and index download), `x_bot.py` (X and retrieval), `instagram_bot.py` and `instagram_webhook.py` (Instagram), `vision_utils.py` (OCR), `security.py` (guardrails), `bot_main.py` (runs both bots in one process).
 
-### Why MMR Instead of Similarity?
+## Status
 
-**Previous Approach:** Pure semantic similarity  
-→ Returned redundant chunks from same document
+The hosted bot ran on X and is offline now. The code and the steps to run your own copy are below.
 
-**Current Approach:** Maximal Marginal Relevance (MMR)  
-→ Balances relevance + diversity for comprehensive context
-
----
-
-## 📦 Installation
+## Run it yourself
 
 ### Requirements
-- Python 3.11+
-- 16GB RAM (8GB minimum)
-- Groq API key (free at [console.groq.com](https://console.groq.com))
 
-### Setup (5 minutes)
+- Python 3.11 (the Docker image uses `python:3.11-slim`), plus `tar` and `zstd`.
+- An NVIDIA NIM API key and X API keys for the bot account. Instagram also needs a Meta app with webhooks.
+- The FAISS index, about 6.8 GB, which the bot loads into memory at startup. Build it with the steps below. If you host the archive, set `FAISS_URL` and `start.py` downloads it on first boot.
 
-**1. Clone repository**
-```bash
-git clone https://github.com/AnkitNayak-eth/EpsteinFiles-RAG.git
-cd EpsteinFiles-RAG
-```
+### Environment variables
 
-**2. Create virtual environment**
-```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-```
+Copy `.env.example` to `.env` and fill in your own values. Add the other names as you need them.
 
-**3. Install dependencies**
+| Variable | Used for |
+| --- | --- |
+| `NVIDIA_API_KEY` | LLM and OCR calls to NVIDIA NIM |
+| `TWITTER_BEARER_TOKEN`, `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_SECRET` | Reading mentions and posting replies on X |
+| `FAISS_DIR` | Index folder (default `faiss_index`) |
+| `FAISS_URL` | Direct link to `faiss_index.tar.zst` for the first-boot download |
+| `POLL_INTERVAL` | Seconds between mention checks (default 180) |
+| `IG_ACCESS_TOKEN`, `IG_ACCOUNT_ID`, `IG_USERNAME` | Instagram replies (off unless `IG_ACCESS_TOKEN` is set) |
+| `IG_WEBHOOK_VERIFY_TOKEN`, `IG_APP_SECRET` | Meta webhook verification and payload signatures (signatures are checked only when `IG_APP_SECRET` is set) |
+| `PORT` | Webhook server port (default 8080) |
+
+The first two rows are in `.env.example`. The rest are read in `start.py`, `x_bot.py`, `bot_main.py` and the Instagram modules.
+
+### Start the bot
+
 ```bash
 pip install -r requirements.txt
+python start.py
 ```
 
-**4. Configure environment**
-
-Create `.env` file:
-```
-GROQ_API_KEY=your_api_key_here
-```
-
-## 🚀 Getting Started
-
-### Run Complete Pipeline (First Time)
-
-This processes data and prepares the system for queries:
+`start.py` looks for `faiss_index/index.faiss`, downloads the archive from `FAISS_URL` if it is missing, then runs `bot_main.py`. For the download, `FAISS_URL` must be a real environment variable, because `start.py` does not read `.env`. The archive goes to `/tmp` and is unpacked with `tar --zstd`. Docker covers all of that:
 
 ```bash
-# Stage 1: Download raw data (~5-15 min)
-python ingest/download_dataset.py
+docker build -t epstein-bot .
+docker run --env-file .env -v "$PWD/faiss_index:/app/faiss_index" epstein-bot
+```
 
-# Stage 2: Clean and reconstruct documents (~3-8 min)
-python ingest/clean_dataset.py
+Add `-p 8080:8080` for the Instagram webhook. On Railway, `railway.toml` builds the same Dockerfile and runs `python start.py`, restarting it up to 5 times on failure. Mount a volume at `/app/faiss_index` and set `FAISS_URL` so the first boot fills it.
 
-# Stage 3: Create semantic chunks (~5-12 min)
+### Build the index
+
+```bash
+pip install -r requirements.txt langchain-text-splitters
+python ingest/download_corpus.py
+python ingest/extract_from_sqlite.py
 python ingest/chunk_dataset.py
-
-# Stage 4: Generate embeddings (~20-45 min)
-python ingest/embed_chunks.py
+python ingest/embed_runner.py    # runs embed_chunks.py and restarts it after a crash
+bash deploy/compress_faiss.sh    # optional: pack the index for FAISS_URL
 ```
 
-### Start Using the System
+- The v4.0 download links in `ingest/download_corpus.py` return 404. As of November 2026 the corpus project publishes only a v5.2 release, with different file names, so that script needs updating before it will run. The counts in this README (1.38M documents, about 2.47M vectors) come from the v4.0 build.
+- `langchain-text-splitters` is not in `requirements.txt` because the Docker image does not run ingestion.
+- `chunk_dataset.py` and `embed_chunks.py` hold the whole corpus in memory. They were written for a machine with 64 GB of RAM.
+- Embedding uses a CUDA GPU if PyTorch finds one and falls back to the CPU.
+- `api/main.py` (Q&A API) and `app.py` (Streamlit UI) come from the original project and are not used by the bot. The API still reads a ChromaDB store through `langchain-chroma`, which is no longer in `requirements.txt`.
 
-**Terminal 1 - Start API Server**
-```bash
-uvicorn api.main:app --reload
-```
-API runs at: `http://127.0.0.1:8000`
+## Responsible use
 
-**Terminal 2 - Start Web UI**
-```bash
-streamlit run app.py
-```
-UI opens at: `http://localhost:8501`
+The bot searches public records and replies with document names, so people can look the documents up and read them. It does not decide what is true, and it does not summarize or quote documents. Any line from the model that does not look like a file name is dropped before posting. The documents themselves can contain unverified claims. A listed file is one the model judged related to the post. It does not mean the post is true.
 
-**That's it!** You can now query through the web interface or API.
+## Credits
 
----
-## 📚 Project Structure
+- [EpsteinFiles-RAG](https://github.com/AnkitNayak-dev/EpsteinFiles-RAG) by Ankit Nayak (MIT): the original RAG pipeline, API and UI.
+- [Epstein-research-data](https://github.com/rhowardstone/Epstein-research-data) by Rye Howard-Stone: the full-text corpus (`full_text_corpus.db`), licensed [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). The ingest scripts download it. It is not stored in this repo.
+- Source documents: the U.S. Department of Justice release under the Epstein Files Transparency Act (Public Law 119-38), at [justice.gov/epstein](https://www.justice.gov/epstein), plus the House Oversight and FBI Vault material in the corpus.
+- Models: `sentence-transformers/all-MiniLM-L6-v2` for embeddings, plus `deepseek-ai/deepseek-v3.2` and `nvidia/nemotron-nano-12b-v2-vl` through NVIDIA NIM.
 
-```
-EpsteinFiles-RAG/
-├── ingest/                    # Data processing pipeline
-│   ├── download_dataset.py    # Download from Hugging Face
-│   ├── clean_dataset.py       # Clean & reconstruct docs
-│   ├── chunk_dataset.py       # Semantic chunking
-│   └── embed_chunks.py        # Embed & index
-├── api/                       # FastAPI backend
-│   ├── main.py               # API routes
-│   └── models.py             # Data models
-├── app.py                     # Streamlit UI
-├── requirements.txt           # Python dependencies
-├── .env.example              # Environment template
-└── README.md                 # This file
-```
+## License
 
----
-
-## 📜 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **Dataset:** [Teyler/Epstein Files 20K](https://huggingface.co/datasets/teyler/epstein-files-20k) on Hugging Face
-- **Embeddings:** [Sentence Transformers](https://www.sbert.net/)
-- **Vector DB:** [Chroma](https://www.trychroma.com/)
-- **LLM Inference:** [Groq Cloud](https://console.groq.com/)
-- **Framework:** [LangChain](https://www.langchain.com/)
-- **UI:** [Streamlit](https://streamlit.io/)
-
----
-
-## 📞 Support
-
-**Built by:** Ankit Kumar Nayak  
-**Full-Stack Developer | AI & RAG Systems**
-
-**Get Help:**
-- 📝 [Open an Issue](https://github.com/AnkitNayak-eth/EpsteinFiles-RAG/issues)
-- 💬 [Start a Discussion](https://github.com/AnkitNayak-eth/EpsteinFiles-RAG/discussions)
-
----
-
-## ⚠️ Disclaimer
-
-This project is built for **research, transparency, and educational purposes**. All data is sourced from public records. Users are responsible for complying with applicable laws and ethical guidelines when using this system.
-
----
+MIT, same as the original project. [LICENSE](LICENSE) keeps the original copyright line. The MIT license covers the code in this repo. The corpus has its own license (CC BY-NC-SA 4.0). A prebuilt index includes corpus text (`texts.pkl`), so share one only under that license.
